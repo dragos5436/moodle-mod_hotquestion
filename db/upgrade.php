@@ -84,7 +84,7 @@ function xmldb_hotquestion_upgrade($oldversion=0) {
         $rec->module = 'hotquestion';
         $rec->action = 'add';
         $rec->mtable = 'hotquestion';
-        $rec->filed  = 'name';
+        $rec->filed = 'name';
         // Insert the add action in log_display.
         $result = $DB->insert_record('log_display', $rec);
         // Now the update action.
@@ -341,28 +341,25 @@ function xmldb_hotquestion_upgrade($oldversion=0) {
         // Hotquestion savepoint reached.
         upgrade_mod_savepoint(true, 2022041000, 'hotquestion');
     }
-    if ($oldversion < 2022050900) {
+    // 4.1.0  Upgrade starts here.
+    if ($oldversion < 2022070701) {
         // Define field assesstimestart to be added to hotquestion.
         $table = new xmldb_table('hotquestion');
-        $field = new xmldb_field('assesstimestart', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'assessedtimefinish');
+        $field = new xmldb_field('assesstimestart', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'assessed');
 
-        // Conditionally launch add field assessedtimestart.
+        // Conditionally launch add field assesstimestart.
         if (!$dbman->field_exists($table, $field)) {
             $dbman->add_field($table, $field);
         }
 
         // Define field assesstimefinish to be added to hotquestion.
         $table = new xmldb_table('hotquestion');
-        $field = new xmldb_field('assesstimefinish'
-                                 , XMLDB_TYPE_INTEGER
-                                 , '10'
-                                 , null
-                                 , XMLDB_NOTNULL
-                                 , null
-                                 , '0'
-                                 , 'assessedtimestart');
+        $field = new xmldb_field('assesstimefinish',
+                                 XMLDB_TYPE_INTEGER, '10', null,
+                                 XMLDB_NOTNULL, null, '0',
+                                 'assessedtimestart');
 
-        // Conditionally launch add field assessedtimefinish.
+        // Conditionally launch add field assesstimefinish.
         if (!$dbman->field_exists($table, $field)) {
             $dbman->add_field($table, $field);
         }
@@ -545,6 +542,21 @@ function xmldb_hotquestion_upgrade($oldversion=0) {
         $dbman->change_field_notnull($table, $field);
         $dbman->change_field_default($table, $field);
 
+        // The tpriority should always be 0 or higher. We want to find all records where this is not the case.
+        // Get all the hotquestion_question records.
+        $sql = "SELECT hqq.*
+                  FROM {hotquestion_questions} hqq
+                 WHERE hqq.id > 0";
+        $tprioritystofix = $DB->get_records_sql($sql, null);
+        // Find all the records with null for each hotquestion teacher priority.
+        foreach ($tprioritystofix as $tprioritytofix) {
+            if (!isset($tprioritytofix->tpriority)) {
+                // Replace the null with 0 so the redefine will not fail.
+                $tprioritytofix->tpriority = 0;
+                $DB->update_record('hotquestion_questions', $tprioritytofix);
+            };
+        };
+
         // Redefine field tpriority to be added to hotquestion_questions.
         $table = new xmldb_table('hotquestion_questions');
         $field = new xmldb_field('tpriority', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0', 'approved');
@@ -555,7 +567,40 @@ function xmldb_hotquestion_upgrade($oldversion=0) {
         $dbman->change_field_default($table, $field);
 
         // Hotquestion savepoint reached.
-        upgrade_mod_savepoint(true, 2022050900, 'hotquestion');
+        upgrade_mod_savepoint(true, 2022070701, 'hotquestion');
     }
-    return $result;
+
+    // 4.1.5 20230126 Upgrade starts here.
+    if ($oldversion < 2023012600) {
+        // If they exist, need code to drop two fields, assessedtimefinish and assessedtimestart.
+        // Define field assessedtimefinish to be dropped from hotquestion.
+        $table = new xmldb_table('hotquestion');
+        $field = new xmldb_field('assessedtimefinish');
+
+        // Conditionally launch drop field assessedtimefinish.
+        if ($dbman->field_exists($table, $field)) {
+            $dbman->drop_field($table, $field);
+        }
+        // Define field assessedtimestart to be dropped from hotquestion.
+        $table = new xmldb_table('hotquestion');
+        $field = new xmldb_field('assessedtimestart');
+
+        // Conditionally launch drop field assessedtimestart.
+        if ($dbman->field_exists($table, $field)) {
+            $dbman->drop_field($table, $field);
+        }
+
+        // Define field viewaftertimeclose to be added to hotquestion.
+        $table = new xmldb_table('hotquestion');
+        $field = new xmldb_field('viewaftertimeclose', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0', 'timeclose');
+
+        // Conditionally launch add field viewaftertimeclose.
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // Hotquestion savepoint reached.
+        upgrade_mod_savepoint(true, 2023012600, 'hotquestion');
+    }
+    return true;
 }

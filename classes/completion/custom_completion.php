@@ -39,23 +39,46 @@ class custom_completion extends activity_custom_completion {
      * @return int The completion state.
      */
     public function get_state(string $rule): int {
-        global $CFG;
+        global $DB;
 
         $this->validate_rule($rule);
 
         $userid = $this->userid;
-        $cm = $this->cm;
+        $hotquestionid = $this->cm->instance;
 
-        require_once($CFG->dirroot . '/mod/hotquestion/locallib.php');
+        if (!$hotquestion = $DB->get_record('hotquestion', ['id' => $hotquestionid])) {
+            throw new moodle_exception(get_string('incorrectmodule', 'hotquestion'));
 
-        $hotquestion = new \hotquestion(null, $cm, $cm->get_course());
-        if ($hotquestion->get_instance()->teamsubmission) {
-            $submission = $hotquestion->get_group_submission($userid, 0, false);
-        } else {
-            $submission = $hotquestion->get_user_submission($userid, false);
         }
-        $status = $submission && $submission->status == HOTQUESTION_SUBMISSION_STATUS_SUBMITTED;
 
+        $questioncountparams = ['userid' => $userid, 'hotquestionid' => $hotquestionid];
+        $questionvoteparams = ['userid' => $userid, 'hotquestionid' => $hotquestionid];
+
+        $questionvotesql = "SELECT COUNT(hv.id)
+                           FROM {hotquestion_votes} hv
+                           JOIN {hotquestion_questions} hq ON hq.id = hv.question
+                          WHERE hq.hotquestion = :hotquestionid
+                            AND hv.voter = :userid";
+
+        $questiongradesql = "SELECT *
+                           FROM {hotquestion_grades} hqg
+                           JOIN {hotquestion_questions} hqq ON hqg.hotquestion = hqq.id
+                          WHERE hqg.userid = :userid
+                            AND hqq.id = :hotquestionid";
+
+        if ($rule == 'completionpost') {
+            $status = $hotquestion->completionpost <=
+                $DB->count_records('hotquestion_questions', ['hotquestion' => $hotquestionid, 'userid' => $userid]);
+
+        } else if ($rule == 'completionvote') {
+            $status = $hotquestion->completionvote <=
+                $DB->get_field_sql($questionvotesql , $questionvoteparams);
+        } else if ($rule == 'completionpass') {
+            $status = $hotquestion->completionpass <=
+                $DB->get_field_sql($questioncountsql.
+                    ' AND hqg.userid = $userid AND hqg.rawrating >= hqqcompletionpass',
+                    $questioncountparams);
+        }
         return $status ? COMPLETION_COMPLETE : COMPLETION_INCOMPLETE;
     }
 
@@ -65,7 +88,10 @@ class custom_completion extends activity_custom_completion {
      * @return array
      */
     public static function get_defined_custom_rules(): array {
-        return ['completionsubmit'];
+        return [
+            'completionpost',
+            'completionvote',
+        ];
     }
 
     /**
@@ -74,8 +100,11 @@ class custom_completion extends activity_custom_completion {
      * @return array
      */
     public function get_custom_rule_descriptions(): array {
+        $completionpost = $this->cm->customdata['customcompletionrules']['completionpost'] ?? 0;
+        $completionvote = $this->cm->customdata['customcompletionrules']['completionvote'] ?? 0;
         return [
-            'completionsubmit' => get_string('completiondetail:submit', 'hotquestion')
+            'completionpost' => get_string('completiondetail:post', 'hotquestion', $completionpost),
+            'completionvote' => get_string('completiondetail:vote', 'hotquestion', $completionvote),
         ];
     }
 
@@ -87,8 +116,10 @@ class custom_completion extends activity_custom_completion {
     public function get_sort_order(): array {
         return [
             'completionview',
-            'completionsubmit',
+            'completionpost',
+            'completionvote',
             'completionusegrade',
+            'completionpassgrade',
         ];
     }
 }

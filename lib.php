@@ -86,9 +86,9 @@ function hotquestion_update_instance($hotquestion) {
         $hotquestion->timeclose = 0;
     }
 
-    $cmid       = $hotquestion->coursemodule;
+    $cmid = $hotquestion->coursemodule;
     $cmidnumber = $hotquestion->cmidnumber;
-    $courseid   = $hotquestion->course;
+    $courseid = $hotquestion->course;
 
     $hotquestion->id = $hotquestion->instance;
 
@@ -98,7 +98,7 @@ function hotquestion_update_instance($hotquestion) {
     $hotquestion->id = $hotquestion->instance;
 
     // Contrib by ecastro ULPGC.
-    // Check if grades need recalculation due to changed factor.
+    // Check if grades need recalculation due to changed factor(s).
     $recalculate = hotquestion_check_ratings_recalculation($hotquestion);
     // You may have to add extra stuff in here.
     results::hotquestion_update_calendar($hotquestion, $cmid);
@@ -108,6 +108,7 @@ function hotquestion_update_instance($hotquestion) {
     // Contrib by ecastro ULPGC.
     $hotquestion->cmid = $cmid;
     hotquestion_grade_item_update($hotquestion);
+    // If the grade factors were changed, then recalculate all the grades.
     if ($recalculate) {
         hotquestion_recalculate_rating_grades($cmid);
     }
@@ -162,7 +163,8 @@ function hotquestion_delete_instance($id) {
  */
 function reset_instance($hotquestionid) {
     global $DB;
-
+    // 20220810 Added to fix git hub issue #65.
+    $hotquestion = $DB->get_record('hotquestion', array('id' => $hotquestionid));
     $questions = $DB->get_records('hotquestion_questions', array('hotquestion' => $hotquestionid));
     foreach ($questions as $question) {
         if (! $DB->delete_records('hotquestion_votes', array('question' => $question->id))) {
@@ -252,34 +254,36 @@ function hotquestion_print_recent_activity($course, $viewfullnames, $timestart) 
     global $CFG, $USER, $DB, $OUTPUT;
 
     $dbparams = array($timestart, $course->id, 'hotquestion');
+    $userfieldsapi = \core_user\fields::for_userpic();
+    $namefields = $userfieldsapi->get_sql('u', false, '', 'userid', false)->selects;
 
-    if ($CFG->branch > 30) { // If Moodle less than version 3.1 skip this.
-        $userfieldsapi = \core_user\fields::for_userpic();
-        $namefields = $userfieldsapi->get_sql('u', false, '', 'duserid', false)->selects;
-    } else {
-        $namefields = user_picture::fields('u', null, 'userid');
-    }
-    $sql = "SELECT hqq.id, hqq.time, cm.id AS cmid, $namefields
-         FROM {hotquestion_questions} hqq
-              JOIN {hotquestion} hq         ON hq.id = hqq.hotquestion
-              JOIN {course_modules} cm ON cm.instance = hq.id
-              JOIN {modules} md        ON md.id = cm.module
-              JOIN {user} u            ON u.id = hqq.userid
-         WHERE hqq.time > ? AND
-               hq.course = ? AND
-               md.name = ?
-         ORDER BY hqq.time ASC
+    $sql = "SELECT hqq.id,
+                   hqq.time,
+                   cm.id AS cmid,
+                   $namefields
+              FROM {hotquestion_questions} hqq
+              JOIN {hotquestion} hq
+                ON hq.id = hqq.hotquestion
+              JOIN {course_modules} cm
+                ON cm.instance = hq.id
+              JOIN {modules} md
+                ON md.id = cm.module
+              JOIN {user} u
+                ON u.id = hqq.userid
+             WHERE hqq.time > ?
+               AND hq.course = ?
+               AND md.name = ?
+          ORDER BY hqq.time ASC
     ";
 
     $newentries = $DB->get_records_sql($sql, $dbparams);
 
     $modinfo = get_fast_modinfo($course);
-    $show    = array();
-    $grader  = array();
+    $show = array();
+    $grader = array();
     $showrecententries = get_config('hotquestion', 'showrecentactivity');
 
     foreach ($newentries as $anentry) {
-
         if (!array_key_exists($anentry->cmid, $modinfo->get_cms())) {
             continue;
         }
@@ -334,7 +338,7 @@ function hotquestion_print_recent_activity($course, $viewfullnames, $timestart) 
         return false;
     }
 
-    echo $OUTPUT->heading(get_string('modulenameplural', 'hotquestion').':', 3);
+    echo $OUTPUT->heading(get_string('modulenameplural', 'hotquestion').':', 6);
 
     foreach ($show as $submission) {
         $cm = $modinfo->get_cm($submission->cmid);
@@ -370,7 +374,7 @@ function hotquestion_cron () {
  * objects must contain at least id property.
  * See other modules as example.
  * @param int $hotquestionid
- * @return boolean|array false if no participants, array of objects otherwise
+ * @return boolean|array false if no participants, array of stdClasss otherwise.
  */
 function hotquestion_get_participants($hotquestionid) {
     return false;
@@ -433,68 +437,39 @@ function hotquestion_reset_course_form_definition(&$mform) {
  */
 function hotquestion_supports($feature) {
     global $CFG;
-    if ($CFG->branch > 311) {
-        switch($feature) {
-            case FEATURE_MOD_PURPOSE:
-                return MOD_PURPOSE_COLLABORATION;
-            case FEATURE_BACKUP_MOODLE2:
-                return true;
-            case FEATURE_COMMENT:
-                return true;
-            case FEATURE_COMPLETION_HAS_RULES:
-                return true;
-            case FEATURE_COMPLETION_TRACKS_VIEWS:
-                return true;
-            case FEATURE_GRADE_HAS_GRADE:
-                return true;
-            case FEATURE_GRADE_OUTCOMES:
-                return false;
-            case FEATURE_GROUPS:
-                return true;
-            case FEATURE_GROUPINGS:
-                return true;
-            case FEATURE_GROUPMEMBERSONLY:
-                return true;
-            case FEATURE_MOD_INTRO:
-                return true;
-            case FEATURE_RATE:
-                return false;
-            case FEATURE_SHOW_DESCRIPTION:
-                return true;
-
-            default:
-                return null;
+    if ((int)$CFG->branch > 311) {
+        if ($feature === FEATURE_MOD_PURPOSE) {
+            return MOD_PURPOSE_COLLABORATION;
         }
-    } else {
-        switch($feature) {
-            case FEATURE_BACKUP_MOODLE2:
-                return true;
-            case FEATURE_COMMENT:
-                return true;
-            case FEATURE_COMPLETION_HAS_RULES:
-                return true;
-            case FEATURE_COMPLETION_TRACKS_VIEWS:
-                return true;
-            case FEATURE_GRADE_HAS_GRADE:
-                return true;
-            case FEATURE_GRADE_OUTCOMES:
-                return false;
-            case FEATURE_GROUPS:
-                return true;
-            case FEATURE_GROUPINGS:
-                return true;
-            case FEATURE_GROUPMEMBERSONLY:
-                return true;
-            case FEATURE_MOD_INTRO:
-                return true;
-            case FEATURE_RATE:
-                return false;
-            case FEATURE_SHOW_DESCRIPTION:
-                return true;
+    }
+    switch($feature) {
+        case FEATURE_BACKUP_MOODLE2:
+            return true;
+        case FEATURE_COMMENT:
+            return true;
+        case FEATURE_COMPLETION_HAS_RULES:
+            return true;
+        case FEATURE_COMPLETION_TRACKS_VIEWS:
+            return true;
+        case FEATURE_GRADE_HAS_GRADE:
+            return true;
+        case FEATURE_GRADE_OUTCOMES:
+            return false;
+        case FEATURE_GROUPS:
+            return true;
+        case FEATURE_GROUPINGS:
+            return true;
+        case FEATURE_GROUPMEMBERSONLY:
+            return true;
+        case FEATURE_MOD_INTRO:
+            return true;
+        case FEATURE_RATE:
+            return false;
+        case FEATURE_SHOW_DESCRIPTION:
+            return true;
 
-            default:
-                return null;
-        }
+        default:
+            return null;
     }
 }
     /**
@@ -529,7 +504,7 @@ function hotquestion_comment_validate($commentparam) {
     }
     $context = context_module::instance($cm->id);
 
-    if ($hotquestion->approval and !$record->approved and !has_capability('mod/hotquestion:manageentries', $context)) {
+    if ($hotquestion->approval && !$record->approved && !has_capability('mod/hotquestion:manageentries', $context)) {
         throw new comment_exception('notapproved', 'hotquestion');
     }
     // Validate context id.
@@ -624,7 +599,7 @@ function hotquestion_get_completion_state($course, $cm, $userid, $type) {
         }
     }
 
-    // Check if the user has used up all heat.
+    // Check if the user has used up all heat attempts.
     if ($hotquestion->completionvote) {
         $sql = "SELECT COUNT(v.id)
                   FROM {hotquestion_votes} v
@@ -651,6 +626,7 @@ function hotquestion_get_completion_state($course, $cm, $userid, $type) {
             }
         }
     }
+
     return $result;
 }
 
@@ -755,9 +731,9 @@ function hotquestion_update_grades($hotquestion, $userid=0, $nullifnone=true) {
     } else if ($grades = hotquestion_get_user_grades($hotquestion, $userid)) {
         hotquestion_grade_item_update($hotquestion, $grades);
 
-    } else if ($userid and $nullifnone) {
+    } else if ($userid && $nullifnone) {
         $grade = new stdClass();
-        $grade->userid   = $userid;
+        $grade->userid = $userid;
         $grade->rawgrade = null;
         hotquestion_grade_item_update($hotquestion, $grade);
 
@@ -767,7 +743,7 @@ function hotquestion_update_grades($hotquestion, $userid=0, $nullifnone=true) {
 }
 
 /**
- * Create/update grade item for given hotquestion
+ * Create/update grade item for given hotquestion.
  *
  * @category grade
  * @param stdClass $hotquestion stdClass with extra cmidnumber
@@ -778,16 +754,19 @@ function hotquestion_grade_item_update($hotquestion, $grades=null) {
     global $CFG;
     require_once($CFG->libdir.'/gradelib.php');
 
+    // Hot Question does not use the Moodle rating, only the whole Hot Question grade.
     $item = array();
     $item['itemname'] = clean_param($hotquestion->name, PARAM_NOTAGS);
     $item['gradetype'] = GRADE_TYPE_VALUE;
-    if ($hotquestion->grade > 0) {
+
+    if (isset($hotquestion->grade) && $hotquestion->grade > 0) {
         $item['gradetype'] = GRADE_TYPE_VALUE;
-        $item['grademax']  = $hotquestion->grade;
-        $item['grademin']  = 0;
-    } else if ($hotquestion->grade < 0) {
+        $item['grademax'] = $hotquestion->grade;
+        $item['grademin'] = 0;
+    } else if (isset($hotquestion->grade) && $hotquestion->grade < 0) {
         $item['gradetype'] = GRADE_TYPE_SCALE;
-        $item['scaleid']   = -$hotquestion->grade;
+        $item['scaleid'] = -$hotquestion->grade;
+
     } else {
         $item['gradetype'] = GRADE_TYPE_NONE;
     }
@@ -796,9 +775,14 @@ function hotquestion_grade_item_update($hotquestion, $grades=null) {
         $item['reset'] = true;
         $grades = null;
     }
-
-    grade_update('mod/hotquestion', $hotquestion->course, 'mod', 'hotquestion',
-            $hotquestion->id, 0, $grades, $item);
+    grade_update('mod/hotquestion',
+                 $hotquestion->course,
+                 'mod',
+                 'hotquestion',
+                 $hotquestion->id,
+                 0,
+                 $grades,
+                 $item);
 }
 
 /**
@@ -819,6 +803,7 @@ function hotquestion_get_user_grades(stdclass $hotquestion, int $userid = 0) {
     }
 
     $context = context_module::instance($hotquestion->cmid);
+
     list($esql, $params) = get_enrolled_sql($context, 'mod/hotquestion:ask', 0, true);
     $sql = "SELECT u.id, u.username, u.idnumber, g.userid, g.rawrating, g.timemodified
               FROM {user} u
@@ -845,17 +830,22 @@ function hotquestion_get_user_grades(stdclass $hotquestion, int $userid = 0) {
             if ($factor > 1.0) {
                 $factor = 1.0;
             }
-            $grade->rawgrade = $hotquestion->grade * $factor;
+
+            // There was an error here! $hotquestion->grade and later $hotquestion->grade_hotquestion,
+            // when a negative number, it is actually the id of the scale that is being used.
+            if ($hotquestion->grade > 0) {
+                $grade->rawgrade = $hotquestion->grade * $factor;
+            } else if ($hotquestion->grade < 0) {
+                $grade->rawgrade = min($rating->rawrating, $hotquestion->postmaxgrade);
+            }
         }
         $grade->id = $userid;
         $grade->userid = $userid;
         $grade->dategraded = $rating->timemodified;
         $grades[$userid] = clone $grade;
     }
-
     return $grades;
 }
-
 /**
  * Delete grade item for given hotquestion
  *
@@ -871,7 +861,7 @@ function hotquestion_grade_item_delete($hotquestion) {
                         'mod',
                         'hotquestion',
                         $hotquestion->id,
-                        0,
+                        1,
                         null,
                         array('deleted' => 1));
 }
@@ -895,17 +885,16 @@ function hotquestion_rescale_activity_grades(stdClass $course, stdClass $cm, flo
     $hotquestion = $DB->get_record('hotquestion', $dbparams);
     $hotquestion->cmid = $cm->id;
     $hotquestion->cmidnumber = $cm->idnumber;
-
     hotquestion_update_grades($hotquestion);
 
     return true;
 }
 
 /**
- * Checks if ratings parameters have changed so ratings & grades need recalculation.
- * Must be called by update_instance BEFORE storing new data
+ * Checks if grade parameter settings have changed so grades need recalculation.
+ * Must be called by update_instance BEFORE storing new data.
  *
- * @param stdClass $hotquestion stdClass
+ * @param stdClass $hotquestion stdClass.
  */
 function hotquestion_check_ratings_recalculation(stdClass $hotquestion) : bool {
     global $CFG, $DB;
@@ -933,9 +922,6 @@ function hotquestion_check_ratings_recalculation(stdClass $hotquestion) : bool {
 function hotquestion_recalculate_rating_grades(int $cmid) {
     global $CFG, $DB;
 
-    $debug = array();
-    $debug['libCP0 entered hotquestion_recalculate_rating_grades(int $cmid) and checking $cmid: '] = $cmid;
-
     require_once($CFG->dirroot.'/mod/hotquestion/locallib.php');
 
     $hq = new mod_hotquestion($cmid);
@@ -945,27 +931,17 @@ function hotquestion_recalculate_rating_grades(int $cmid) {
     $graded = $DB->get_records_menu('hotquestion_grades', $params, 'userid', 'id, userid');
     $users = array_unique($users + $graded);
 
-    $debug['libCP1 checking $hq: '] = $hq;
-    $debug['libCP2 checking $params: '] = $params;
-    $debug['libCP3 checking $graded: '] = $graded;
-    $debug['libCP4 checking $users: '] = $users;
-
-
-
-
-
     unset($graded);
     $sql = "SELECT v.id, v.voter
               FROM {hotquestion_votes} v
               JOIN {hotquestion_questions} q ON q.id = v.question AND q.hotquestion = :hotquestion
              WHERE NOT EXISTS (SELECT 1
-                               FROM {hotquestion_questions} qq
-                               WHERE qq.hotquestion = q.hotquestion AND qq.userid = v.voter)";
+              FROM {hotquestion_questions} qq
+             WHERE qq.hotquestion = q.hotquestion AND qq.userid = v.voter)";
     $voters = $DB->get_records_sql_menu($sql, $params);
     $users = array_unique($users + $voters);
+
     unset($voters);
 
     $hq->update_users_grades($users);
-print_object($debug);
-//die;
 }

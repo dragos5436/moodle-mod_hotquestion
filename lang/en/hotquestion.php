@@ -47,19 +47,15 @@ $string['authorinfohide'] = 'Posted {$a->time}';
 $string['calendarend'] = '{$a} closes';
 $string['calendarstart'] = '{$a} opens';
 $string['cnfallowcomments'] = 'Define if a hot question will accept comments on entries by default';
-
 $string['completiondetail:post'] = 'Post questions: {$a}';
-$string['completiondetail:vote'] = 'Heat given: {$a}';
+$string['completiondetail:vote'] = 'Give heat: {$a}';
 $string['completiondetail:pass'] = 'Passing grade: {$a}';
-
 $string['completionpostdesc'] = 'Student must create at least {$a} questions(s)';
 $string['completionvotedesc'] = 'Student must vote/give heat to {$a} question(s) or post(s)';
 $string['completionpassdesc'] = 'Student must receive passing grade of {$a}';
-
 $string['completionpostgroup'] = 'Require questions';
 $string['completionvotegroup'] = 'Require heat:';
 $string['completionpassgroup'] = 'Require pass:';
-
 $string['completionpost'] = 'Student must add questions:';
 $string['completionvote'] = 'Student must add heat:';
 $string['completionpass'] = 'Student must pass:';
@@ -79,8 +75,8 @@ $string['eventremoveround'] = 'Remove round';
 $string['eventremovevote'] = 'Removed vote';
 $string['eventupdatevote'] = 'Updated vote';
 $string['exportfilename'] = 'questions.csv';
-$string['exportfilenamep1'] = 'All_Site';
-$string['exportfilenamep2'] = '_HQ_Questions_Exported_On_';
+$string['exportfilenamep1'] = 'All_Site_';
+$string['exportfilenamep2'] = 'HQ_Questions_Exported_On_';
 $string['factorheat'] = 'Heat received factor';
 $string['factorheat_help'] = 'A factor to apply to questions count for grading based on question heat.
 The hotter the question, the greater weight towards grading.
@@ -102,10 +98,11 @@ This credit is the number of emitted votes times this factor/100.
 
     credit = votes · factor/100
 
-The factor need to be adjusted depending on the total votes an student could emit
+The factor need to be adjusted depending on the total votes a student could emit
 and the weight desired for this type of participation.
-For instance, in an student can emit 5 heat votes, a factor on 20% means voting for other 5 questions counts as
+For instance, if a student can emit 5 heat votes, a factor of 20% means voting for other 5 questions counts as
 one question written by this student. A factor of 100% means voting for other questions counts the same as writing a new question. ';
+$string['finalgrade'] = 'Final grade ';
 $string['for'] = ' for site: ';
 $string['grading'] = 'Raw grade';
 $string['heat'] = 'Heat';
@@ -173,10 +170,10 @@ $string['pluginname'] = 'Hot Question';
 $string['previousround'] = 'Previous round';
 $string['postbutton'] = 'Click to post';
 $string['postmaxgrade'] = 'Questions for max grading';
-$string['postmaxgrade_help'] = 'The number of questions required to obtain the maximum calification.
+$string['postmaxgrade_help'] = 'The number of questions required to obtain the maximum score.
 
-This is nominally a count of questions, but the value attained by a users may be improved by heat factor (questions with greater heat count more)
-and by voting to other questions (a user may improve the grade by participating voting for questions by other students).';
+This is nominally a count of questions, but the value attained by a user may be improved by heat factor (questions with greater heat count more)
+and by voting on other questions (a user may improve the grade by participating in voting for questions by other students).';
 $string['privacy:metadata:hotquestion_questions'] = "Information about the user's entries for a given Hot Question activity. ";
 $string['privacy:metadata:hotquestion_questions:userid'] = 'The ID of the user that posted this entry.';
 $string['privacy:metadata:hotquestion_questions:hotquestion'] = 'The ID of the Hot Question activity in which the content was posted.';
@@ -219,10 +216,16 @@ $string['teacherpriorityvisibility_help'] = 'If enabled, the Teacher priority co
 $string['teacherpriorityvisibility_descr'] = 'If enabled, the Teacher priority column is visible, otherwise it is hidden.';
 $string['time'] = 'Time';
 $string['totalcomments'] = 'Total comments';
+$string['unapprovedquestionhide'] = 'Hide unapproved questions';
+$string['unapprovedquestionnotset'] = 'Preference not set';
+$string['unapprovedquestionsee'] = 'See unapproved questions';
+$string['unapprovedquestionvisibility'] = 'Unapproved question visibility';
 $string['userid'] = 'Userid';
 $string['valueinterror'] = 'The factor must be a positive integer number';
+$string['viewaftertimeclose'] = 'View after close time';
+$string['viewaftertimeclose_help'] = 'If enabled, students will be able to view, but not alter, questions and heat after close time, otherwise they will be hidden.';
 $string['viewallentries'] = '{$a->ucount} user(s) posted {$a->qcount} question(s).';
-$string['viewallhotquestions'] = 'View all Hot Questions';
+$string['viewallhotquestions'] = 'View all course Hot Questions';
 $string['viewentries'] = 'Participation in current round';
 $string['viewgrades'] = 'View grades';
 $string['vote'] = 'Vote';

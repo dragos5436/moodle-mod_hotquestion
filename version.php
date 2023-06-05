@@ -29,9 +29,10 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2022051800;      // The current module version (Date: YYYYMMDDXX).
-$plugin->requires  = 2014111000;      // Requires Moodle 2.8 version.
-$plugin->cron      = 0;               // Period for cron to check this module (secs).
+$plugin->version = 2023052501; // The current module version (Date: YYYYMMDDXX).
+$plugin->requires = 2021051700; // Requires Moodle 3.11 version.
+$plugin->cron = 0; // Period for cron to check this module (secs).
 $plugin->component = 'mod_hotquestion';
-$plugin->maturity  = MATURITY_RC;
-$plugin->release   = "4.1.0 (Build: 2022051800) RC1"; // User-friendly version number.
+$plugin->maturity = MATURITY_STABLE;
+$plugin->release = "4.1.7+ (Build: 2023053100)"; // User-friendly version number.
+$plugin->supported = [311, 402];

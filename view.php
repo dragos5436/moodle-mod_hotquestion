@@ -26,6 +26,7 @@
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 use mod_hotquestion\local\results;
+use mod_hotquestion\local\hqavailable;
 use \mod_hotquestion\event\course_module_viewed;
 
 require_once("../../config.php");
@@ -37,9 +38,9 @@ comment::init();
 
 $id = required_param('id', PARAM_INT);                  // Course_module ID.
 $ajax = optional_param('ajax', 0, PARAM_BOOL);          // Asychronous form request.
-$action  = optional_param('action', '', PARAM_ACTION);  // Action(vote, newround).
+$action = optional_param('action', '', PARAM_ACTION);  // Action(vote, newround).
 $roundid = optional_param('round', -1, PARAM_INT);      // Round id.
-$changegroup = optional_param('group', -1, PARAM_INT);  // Choose the current group.
+$group = optional_param('group', -1, PARAM_INT);  // Choose the current group.
 
 if (! $cm = get_coursemodule_from_id('hotquestion', $id)) {
     throw new moodle_exception(get_string('incorrectmodule', 'hotquestion'));
@@ -70,15 +71,23 @@ if (! $cw = $DB->get_record("course_sections", array("id" => $cm->section))) {
     throw new moodle_exception(get_string('incorrectmodule', 'hotquestion'));
 }
 
-// Trigger module viewed event.
-if ($CFG->version > 2014051200) { // Moodle 2.7+.
-    $params = array('objectid' => $hq->cm->id, 'context' => $context);
-    $event = course_module_viewed::create($params);
-    $event->trigger();
-} else {
-    add_to_log($hq->course->id, 'hotquestion', 'view', "view.php?id={$hq->cm->id}", $hq->instance->name, $hq->cm->id);
-}
+// 20230519 Get a user preference, set to zero if it does not already exist.
+$oldvispreference = get_user_preferences('hotquestion_seeunapproved'.$hotquestion->id, 0);
+$vispreference = optional_param('vispreference', $oldvispreference, PARAM_INT);
 
+// 20230517 Added selector for visibility view. 20230531 First time access will default to,
+// Preference not set, and show the list of questions anyway.
+if (!($oldvispreference)) {
+    set_user_preference('hotquestion_seeunapproved'.$hotquestion->id, 1);
+} else {
+    set_user_preference('hotquestion_seeunapproved'.$hotquestion->id, $vispreference);
+}
+// Trigger module viewed event.
+$params = array('objectid' => $hq->cm->id, 'context' => $context);
+$event = course_module_viewed::create($params);
+$event->trigger();
+
+// Code for Completion, View complete.
 $completion = new completion_info($course);
 $completion->set_module_viewed($cm);
 
@@ -98,10 +107,11 @@ require_capability('mod/hotquestion:view', $context);
 $output = $PAGE->get_renderer('mod_hotquestion');
 $output->init($hq);
 
-// Process submitted question.
-if (has_capability('mod/hotquestion:ask', $context)) {
+// 20230522 Changed to $canask. Process submitted question.
+if ($canask) {
     $mform = new hotquestion_form(null, array($hq->instance->anonymouspost, $hq->cm));
-    if ($fromform = $mform->get_data()) {
+    // 20230520 Needed isset so changing unapproved question views do not cause an error.
+    if (($fromform = $mform->get_data()) && (isset($fromform->submitbutton))) {
         // If there is a post, $fromform will contain text, format, id, and submitbutton.
         // 20210314 Prevent CSFR.
         confirm_sesskey();
@@ -125,7 +135,6 @@ if (has_capability('mod/hotquestion:ask', $context)) {
         $newentry->submitbutton = $fromform->submitbutton;
 
         // From this point, need to process the question and save it.
-        //if (!$hq->add_new_question($fromform)) { // Returns 1 if valid question submitted.
         if (!results::add_new_question($newentry, $hq)) { // Returns 1 if valid question submitted.
             redirect('view.php?id='.$hq->cm->id, get_string('invalidquestion', 'hotquestion'));
         }
@@ -149,16 +158,24 @@ if (!empty($action)) {
             break;
         case 'vote':
             if (has_capability('mod/hotquestion:vote', $context)) {
-                $q = required_param('q',  PARAM_INT);  // Question id to vote.
-                $hq->vote_on($q);
-                redirect('view.php?id='.$hq->cm->id, null); // Needed to prevent heat toggle on page reload.
+                // 20230122 Prevent voting when closed.
+                if ((hqavailable::is_hotquestion_ended($hq) && !$hotquestion->viewaftertimeclose) ||
+                    (has_capability('mod/hotquestion:manageentries', $context))) {
+                    $q = required_param('q',  PARAM_INT);  // Question id to vote.
+                    $hq->vote_on($q);
+                    redirect('view.php?id='.$hq->cm->id, null); // Needed to prevent heat toggle on page reload.
+                }
             }
             break;
         case 'removevote':
             if (has_capability('mod/hotquestion:vote', $context)) {
-                $q = required_param('q',  PARAM_INT);  // Question id to vote.
-                $hq->remove_vote($q);
-                redirect('view.php?id='.$hq->cm->id, null); // Needed to prevent heat toggle on page reload.
+                // 20230122 Prevent vote remove when closed.
+                if ((hqavailable::is_hotquestion_ended($hq) && !$hotquestion->viewaftertimeclose) ||
+                    (has_capability('mod/hotquestion:manageentries', $context))) {
+                    $q = required_param('q',  PARAM_INT);  // Question id to vote.
+                    $hq->remove_vote($q);
+                    redirect('view.php?id='.$hq->cm->id, null); // Needed to prevent heat toggle on page reload.
+                }
             }
             break;
         case 'newround':
@@ -208,42 +225,104 @@ if (!$ajax) {
     // Added code to include the activity name, 10/05/16.
     $hotquestionname = format_string($hotquestion->name, true, array('context' => $context));
     echo $output->header();
-    echo $OUTPUT->heading($hotquestionname);
+    // 20220716 HQ_882 Skip heading for Moodle 4.0 and higher as it seems to be automatic.
+    if ($CFG->branch < 400) {
+        echo $OUTPUT->heading($hotquestionname);
+    }
+
     // Allow access at any time to manager and editing teacher but prevent access to students.
-    if (!(has_capability('mod/hotquestion:manage', $context))) {
-        // Check availability timeopen and timeclose. Added 10/2/16.
-        if (!(results::hq_available($hotquestion))) {  // Availability restrictions.
-            if ($hotquestion->timeclose != 0 && time() > $hotquestion->timeclose) {
-                echo $output->hotquestion_inaccessible(get_string('hotquestionclosed',
-                    'hotquestion', userdate($hotquestion->timeclose)));
-            } else {
-                echo $output->hotquestion_inaccessible(get_string('hotquestionopen',
-                    'hotquestion', userdate($hotquestion->timeopen)));
-            }
+    // Check availability timeopen and timeclose. Added 10/2/16. Modified 20230120 to add viewaftertimeclose.
+    // Modified 20230125 to create hqavailable class.
+    if (!(has_capability('mod/hotquestion:manage', $context)) &&
+        !hqavailable::is_hotquestion_active($hq)) {  // Availability restrictions.
+        $inaccessible = '';
+        if (hqavailable::is_hotquestion_ended($hq) && !$hotquestion->viewaftertimeclose) {
+            $inaccessible = $output->hotquestion_inaccessible(get_string('hotquestionclosed',
+                'hotquestion', userdate($hotquestion->timeclose)));
+        }
+        if (hqavailable::is_hotquestion_yet_to_start($hq)) {
+            $inaccessible = $output->hotquestion_inaccessible(get_string('hotquestionopen',
+                'hotquestion', userdate($hotquestion->timeopen)));
+        }
+        if ($inaccessible !== '') {
+            echo $inaccessible;
             echo $OUTPUT->footer();
             exit();
-            // Password code can go here. e.g. // } else if {.
         }
+        // Password code can go here. e.g. // } else if {.
     }
+
     // 20220301 Added activity completion to the hotquestion description.
     $cminfo = cm_info::create($cm);
     $completiondetails = \core_completion\cm_completion_details::get_instance($cminfo, $USER->id);
     $activitydates = \core\activity_dates::get_dates_for_module($cminfo, $USER->id);
-    echo $output->introduction($cminfo, $completiondetails, $activitydates);
 
-    // 20211219 Added link to all HotQuestion activities.
-    echo '<span style="float:right"><a href="index.php?id='
-         .$course->id
-         .'">'
-         .get_string('viewallhotquestions', 'hotquestion')
-         .'</a></span><br>';
+    // 20220706 HQ_882 Skip intro for Moodle 4.0 and higher as it seems to be automatic.
+    if ($CFG->branch < 400) {
+        echo $output->introduction($cminfo, $completiondetails, $activitydates);
+    }
+
+    // 20230123 Added open and close times, if set.
+    if (($hotquestion->timeopen) && (($hotquestion->timeopen) > time())) {
+        echo '<strong>'.get_string('hotquestionopen', 'hotquestion', date("l, d M Y, G:i A", $hotquestion->timeopen)).
+             '</strong><br>';
+    } else if ($hotquestion->timeopen) {
+        echo '<strong>'.get_string('hotquestionopentime', 'hotquestion').
+             ':</strong> '.date("l, d M Y, G:i A", $hotquestion->timeopen).'<br>';
+    }
+    if (($hotquestion->timeclose) && (($hotquestion->timeclose) < time())) {
+        echo '<strong>'.get_string('hotquestionclosed', 'hotquestion', date("l, d M Y, G:i A", $hotquestion->timeclose)).
+             '</strong><br>';
+    } else if ($hotquestion->timeclose) {
+        echo '<strong>'.get_string('hotquestionclosetime', 'hotquestion').
+             ':</strong> '.date("l, d M Y, G:i A", $hotquestion->timeclose).'<br>';
+    }
+
+    // 20230522 Added a single row table to make both group and viewunapproved preference drop down menus work.
+    echo '<table><tr><td>';
 
     // Print group information (A drop down box will be displayed if the user
     // is a member of more than one group, or has access to all groups).
     echo groups_print_activity_menu($cm, $CFG->wwwroot.'/mod/hotquestion/view.php?id='.$cm->id);
 
+    echo '</td>';
+
+    // 20230519 Added for preference selector.
+    echo '<td><form method="post">';
+
+    // 20230519 Create list for preference selector.
+    $listoptions = array(
+        0 => get_string('unapprovedquestionnotset', 'hotquestion'),
+        1 => get_string('unapprovedquestionsee', 'hotquestion'),
+        2 => get_string('unapprovedquestionhide', 'hotquestion')
+    );
+
+    // 20230519 This creates the dropdown list for visibility of approved/unapproved questions on the page.
+    $selection = html_writer::select($listoptions, 'vispreference', $vispreference, false, array(
+        'id' => 'pref_visibility',
+        'class' => 'custom-select'
+    ));
+    echo '   '.get_string('unapprovedquestionvisibility', 'hotquestion')
+        .' <select onchange="this.form.submit()" name="vispreference">'
+        .'<option selected="true" value="'.$selection.'</option>'
+        .'</select>';
+    // 20230522 Limit the form to this one row/cell of the table.
+    echo '</form></td>';
+
+    // 20230519 This creates the URL link button for all HotQuestions in this course.
+    echo '<td>';
+    $url2 = '<a href="'.$CFG->wwwroot . '/mod/hotquestion/index.php?id='.$course->id
+        .'"class="btn btn-link">'
+        .get_string('viewallhotquestions', 'hotquestion', $hotquestion->name)
+        .'</a>';
+    echo '<span style="float: inline-end">'.$url2.'</span><br>';
+
+    echo '</td></tr></table>';
+
     // Print the textarea box for typing submissions in.
-    if (has_capability('mod/hotquestion:ask', $context)) {
+    if (has_capability('mod/hotquestion:manage', $context) ||
+        (has_capability('mod/hotquestion:ask', $context) &&
+        hqavailable::is_hotquestion_active($hq))) {
         $mform->display();
     }
 }
@@ -251,23 +330,25 @@ if (!$ajax) {
 echo $output->container_start(null, 'questions_list');
 // Print toolbar.
 echo $output->container_start("toolbar");
-// Start contrib by ecastro ULPGC.
+// Start contrib by ecastro ULPGC to list the users grade just before the, View grades, button.
 echo $output->current_user_rating(has_capability('mod/hotquestion:ask', $context));
 
-// 20220515 Endabled the view grade button for both managers and students. Student ONLY see their grade.
-//if ($entriesmanager) {
-if ($entriesmanager || $canask) {
+// 20220515 Enabled the view grade button for both managers and students. Student ONLY see their grade.
+// 20220629 The raw rating and button are visible only if grading is setup.
+if (($entriesmanager || $canask) && ($hotquestion->grade <> 0)) {
     echo ' ';
-    $url = new moodle_url('grades.php', ['id' => $cm->id]);
+    $url = new moodle_url('grades.php', array('id' => $cm->id, 'group' => $group));
     echo $output->single_button($url, get_string('viewgrades', 'hotquestion'));
 }
 // End contrib by ecastro ULPGC.
 echo $output->toolbar(has_capability('mod/hotquestion:manageentries', $context));
 echo $output->container_end();
 
-// Print questions list from the current round.
+// Print questions list from the current round, function questions is in renderer.php file.
 echo $output->questions(has_capability('mod/hotquestion:vote', $context));
 echo $output->container_end();
+
+
 
 // Finish the page.
 if (!$ajax) {

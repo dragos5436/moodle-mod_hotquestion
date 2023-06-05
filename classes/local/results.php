@@ -152,19 +152,6 @@ class results {
     }
 
     /**
-     * Returns availability status.
-     *
-     * Added 10/2/16. Called from view.php file.
-     * Moved 20210226.
-     * @param var $hotquestion
-     */
-    public static function hq_available($hotquestion) {
-        $timeopen = $hotquestion->timeopen;
-        $timeclose = $hotquestion->timeclose;
-        return (($timeopen == 0 || time() >= $timeopen) && ($timeclose == 0 || time() < $timeclose));
-    }
-
-    /**
      * Returns the hotquestion instance course_module id
      *
      * Moved 20210226. Called from this results.php file, function hotquestion_count_entries().
@@ -213,10 +200,10 @@ class results {
                           JOIN {user} u ON u.id = g.userid
                      LEFT JOIN {hotquestion_rounds} hr ON hr.hotquestion=hq.hotquestion
                          WHERE hq.hotquestion = :hqid
-                               AND g.groupid = :gidid
-                               AND hr.endtime=0
-                               AND hq.time>=hr.starttime
-                               AND hq.userid>0";
+                           AND g.groupid = :gidid
+                           AND hr.endtime=0
+                           AND hq.time>=hr.starttime
+                           AND hq.userid>0";
                 $params = array();
                 $params = ['hqid' => $hotquestion->id] + ['gidid' => $gid->id];
                 $hotquestions = $DB->get_records_sql($sql, $params);
@@ -227,13 +214,17 @@ class results {
             // Check all the entries from the whole course.
             // If not currently a group member, but group mode is set for separate groups or visible groups,
             // see if this user has posted anyway, posted before mode was changed or posted before removal from a group.
-            $sql = "SELECT COUNT(DISTINCT hq.userid) AS ucount, COUNT(DISTINCT hq.content) AS qcount FROM {hotquestion_questions} hq
-                      JOIN {user} u ON u.id = hq.userid
-                 LEFT JOIN {hotquestion_rounds} hr ON hr.hotquestion=hq.hotquestion
+            $sql = "SELECT COUNT(DISTINCT hq.userid) AS ucount,
+                           COUNT(DISTINCT hq.content) AS qcount
+                      FROM {hotquestion_questions} hq
+                      JOIN {user} u
+                        ON u.id = hq.userid
+                 LEFT JOIN {hotquestion_rounds} hr
+                        ON hr.hotquestion=hq.hotquestion
                      WHERE hq.hotquestion = :hqid
-                           AND hr.endtime = 0
-                           AND hq.time >= hr.starttime
-                           AND hq.userid = :userid";
+                       AND hr.endtime = 0
+                       AND hq.time >= hr.starttime
+                       AND hq.userid = :userid";
 
             $params = array();
             $params = ['hqid' => $hotquestion->id] + ['userid' => $USER->id];
@@ -244,11 +235,12 @@ class results {
             // Check all the users and entries from the whole course.
             $sql = "SELECT COUNT(DISTINCT hq.userid) AS ucount, COUNT(DISTINCT hq.content) AS qcount FROM {hotquestion_questions} hq
                       JOIN {user} u ON u.id = hq.userid
-                 LEFT JOIN {hotquestion_rounds} hr ON hr.hotquestion=hq.hotquestion
+                 LEFT JOIN {hotquestion_rounds} hr
+                        ON hr.hotquestion=hq.hotquestion
                      WHERE hq.hotquestion = :hqid
-                           AND hr.endtime = 0
-                           AND hq.time >= hr.starttime
-                           AND hq.userid > 0";
+                       AND hr.endtime = 0
+                       AND hq.time >= hr.starttime
+                       AND hq.userid > 0";
             $params = array();
             $params = ['hqid' => $hotquestion->id];
             $hotquestions = $DB->get_records_sql($sql, $params);
@@ -298,7 +290,6 @@ class results {
      * @param object $course
      */
     public static function hotquestion_display_question_comments($question, $cm, $context, $course) {
-        // 20210313 Not in use yet. Part of future development.
         global $CFG, $USER, $OUTPUT, $DB;
         $html = '';
         if (($question->approved) || (has_capability('mod/hotquestion:manageentries', $context))) {
@@ -306,11 +297,11 @@ class results {
             $context = context_module::instance($cm->id);
             $cmt = new stdClass();
             $cmt->component = 'mod_hotquestion';
-            $cmt->context   = $context;
-            $cmt->course    = $course;
-            $cmt->cm        = $cm;
-            $cmt->area      = 'hotquestion_questions';
-            $cmt->itemid    = $question->id;
+            $cmt->context = $context;
+            $cmt->course = $course;
+            $cmt->cm = $cm;
+            $cmt->area = 'hotquestion_questions';
+            $cmt->itemid = $question->id;
             $cmt->showcount = true;
             $comment = new comment($cmt);
             $html = $comment->output(true);
@@ -374,28 +365,13 @@ class results {
     /**
      * Add a new question to current round.
      *
-     * @param object $fromform From ask form.
+     * @param object $newentry
+     * @param object $hq
      */
-    //public static function add_new_question($fromform) {
     public static function add_new_question($newentry, $hq) {
         global $USER, $CFG, $DB;
-        //$data = new StdClass();
-        //$data->hotquestion = $this->instance->id;
 
-        $debug = array();
-        $debug['results CP0 entered public static function add_new_question($newentry, $hq) and checking item $hq: '] = $hq;
-        $debug['results CP1 $newentry and checking item $newentry: '] = $newentry;
-
-        // 20210218 Switched code to use text editor instead of text area.
-        //$data->content = ($fromform->text_editor['text']);
-        //$data->format = ($fromform->text_editor['format']);
-
-        //$data->userid = $USER->id;
-        //$data->time = time();
-        //$data->tpriority = 0;
         // Check if approval is required for this HotQuestion activity.
-        //if (!($newentry->instance->approval)) {
-        //if (!($newentry->approval)) {
         if (!($newentry->approved)) {
             // If approval is NOT required, then auto approve the question so everyone can see it.
             $newentry->approved = 1;
@@ -413,28 +389,17 @@ class results {
         if (!empty($newentry->content)) {
             // If there is some actual content, then create a new record.
             $DB->insert_record('hotquestion_questions', $newentry);
+            $params = array(
+                'objectid' => $hq->cm->id,
+                'context' => $context,
+            );
+            $event = add_question::create($params);
+            $event->trigger();
 
-            if ($CFG->version > 2014051200) { // If newer than Moodle 2.7+ use new event logging.
-                $params = array(
-                    'objectid' => $hq->cm->id,
-                    'context' => $context,
-                );
-                $event = add_question::create($params);
-                $event->trigger();
-            } else {
-                add_to_log($fromform->course->id, "hotquestion", "add question"
-                    , "view.php?id={$fromform->cm->id}", $newentry->content, $fromform->cm->id);
-            }
-
+            // Update completion state for current user.
+            $hq->update_completion_state();
             // Contrib by ecastro ULPGC update grades for question author.
-            //$newentry->update_users_grades([$USER->id]);
             $hq->update_users_grades([$USER->id]);
-
-$debug['results CP exit true1 and checking item $hq: '] = $hq;
-$debug['results CP exit true2 and checking item $hq->update_users_grades([$USER->id]): '] = $hq->update_users_grades([$USER->id]);
-//$debug['results CP exit true3 and checking item $newentry->update_users_grades([$USER->id]): '] = $newentry->update_users_grades([$USER->id]);
-//print_object($debug);
-//die;
             return true;
         } else {
             return false;

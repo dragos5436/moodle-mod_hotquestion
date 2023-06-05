@@ -59,8 +59,14 @@ class download_questions extends \core\event\base {
      * @return string
      */
     public function get_description() {
-        return "The user with id '$this->userid' has downloaded questions for the hotquestion activity with the course module id
-            '$this->contextinstanceid'.";
+        if (is_siteadmin($this->userid)) {
+            $txtforlog = "The admin user with id '$this->userid' has downloaded questions for ALL hotquestion activities
+                         while in the hotquestion with the course module id '$this->contextinstanceid'.";
+        } else {
+            $txtforlog = "The teacher/manager with id '$this->userid' has downloaded the questions for the hotquestion
+                         activity with the course module id '$this->contextinstanceid'.";
+        }
+        return $txtforlog;
     }
 
     /**
@@ -69,15 +75,5 @@ class download_questions extends \core\event\base {
      */
     public function get_url() {
         return new \moodle_url('/mod/hotquestion/view.php', array('id' => $this->contextinstanceid));
-    }
-
-    /**
-     * replace add_to_log() statement.
-     *
-     * @return array of parameters to be passed to legacy add_to_log() function.
-     */
-    protected function get_legacy_logdata() {
-        $url = new \moodle_url('view.php', array('id' => $this->contextinstanceid));
-        return array($this->courseid, 'hotquestion', 'view', $url->out(), $this->objectid, $this->contextinstanceid);
     }
 }
